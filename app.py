@@ -57,16 +57,28 @@ if 'is_running' not in st.session_state:
 with st.sidebar:
     st.header("Settings")
     
-    # Check for API key in secrets, then env
+    # API Key Management
+    fixed_key = ""
     if "GOOGLE_API_KEY" in st.secrets:
-        default_api_key = st.secrets["GOOGLE_API_KEY"]
+        fixed_key = st.secrets["GOOGLE_API_KEY"]
+        st.success("API Key: Configured from Secrets ✅")
+    elif os.environ.get("GOOGLE_API_KEY"):
+        fixed_key = os.environ.get("GOOGLE_API_KEY")
+        st.success("API Key: Configured from .env ✅")
+    
+    # If key is already fixed, we don't need to show the input unless they want to override
+    if fixed_key:
+        api_key_input = st.text_input("Gemini API Key (Override)", 
+                                     type="password", 
+                                     help="Only enter if you want to override the pre-configured key.")
+        api_key = api_key_input if api_key_input else fixed_key
     else:
-        default_api_key = os.environ.get("GOOGLE_API_KEY", "")
-        
-    api_key = st.text_input("Gemini API Key", 
-                            value=default_api_key, 
-                            type="password",
-                            help="Get your key from Google AI Studio. For Streamlit Cloud, add it to App Secrets.")
+        api_key = st.text_input("Gemini API Key", 
+                                type="password",
+                                help="Enter your key from Google AI Studio. For Streamlit Cloud, add it to App Secrets.")
+    
+    if not api_key:
+        st.warning("⚠️ API Key is required to start.")
     
     st.divider()
     
