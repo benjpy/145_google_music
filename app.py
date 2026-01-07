@@ -265,18 +265,35 @@ if st.session_state.is_running and st.session_state.client:
     with st.expander("🌐 Browser Playback (Fallback)", expanded=not st.session_state.client.audio_enabled):
         st.write(f"**Live Session Captured**: `{st.session_state.client.recording_duration:.1f}s` of music")
         
-        col_gen, col_clr = st.columns(2)
-        if col_gen.button(f"🎵 Refresh Player ({st.session_state.client.recording_duration:.1f}s)", use_container_width=True):
-            pcm_data = st.session_state.client.get_audio_bytes()
-            if pcm_data:
-                wav_header = LyriaClient.create_wav_header(len(pcm_data))
-                st.audio(wav_header + pcm_data, format="audio/wav")
+        col_gen, col_dl, col_clr = st.columns(3)
+        
+        pcm_data = st.session_state.client.get_audio_bytes()
+        wav_data = None
+        if pcm_data:
+            wav_data = LyriaClient.create_wav_header(len(pcm_data)) + pcm_data
+            
+        if col_gen.button(f"🔄 Refresh Player", use_container_width=True):
+            if wav_data:
+                st.audio(wav_data, format="audio/wav")
             else:
                 st.info("No audio generated yet.")
         
+        if col_dl.download_button(
+            label="💾 Download WAV",
+            data=wav_data if wav_data else b"",
+            file_name=f"lyria_session_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.wav",
+            mime="audio/wav",
+            disabled=(wav_data is None),
+            use_container_width=True
+        ):
+            st.toast("Download started!")
+
         if col_clr.button("🗑️ Clear Recording", use_container_width=True):
             st.session_state.client._all_audio_bytes.clear()
             st.rerun()
+
+    if wav_data and not st.session_state.client.audio_enabled:
+        st.audio(wav_data, format="audio/wav")
 
     st.write("Current Prompts:", st.session_state.prompts)
     
