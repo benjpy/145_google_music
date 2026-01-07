@@ -26,6 +26,8 @@ class LyriaClient:
         self.sample_rate = 48000
         self.channels = 2
         self._current_prompts = []
+        self.audio_enabled = False
+        self._all_audio_bytes = bytearray()
         
         # Threading/Async management
         self._loop = asyncio.new_event_loop()
@@ -60,14 +62,20 @@ class LyriaClient:
 
         # Initialize output stream
         log_debug("Initializing sounddevice OutputStream")
-        self._playback_stream = sd.OutputStream(
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            dtype='int16',
-            callback=self._audio_callback
-        )
-        self._playback_stream.start()
-        log_debug("OutputStream started")
+        try:
+            self._playback_stream = sd.OutputStream(
+                samplerate=self.sample_rate,
+                channels=self.channels,
+                dtype='int16',
+                callback=self._audio_callback
+            )
+            self._playback_stream.start()
+            self.audio_enabled = True
+            log_debug("OutputStream started")
+        except Exception as e:
+            log_debug(f"Warning: Could not start audio output device. Headless mode? Error: {e}")
+            self.audio_enabled = False
+            self._playback_stream = None
 
     def _audio_callback(self, outdata, frames, time, status):
         """Callback for the sounddevice output stream."""
@@ -109,6 +117,7 @@ class LyriaClient:
                                 log_debug(f"Audio buffer: {len(self._playback_buffer)} chunks. Received: {len(chunk.data)} bytes")
                             
                             self._playback_buffer.append(chunk.data)
+                            self._all_audio_bytes.extend(chunk.data)
                 await asyncio.sleep(0.01)
         except Exception as e:
             log_debug(f"CRITICAL Error receiving audio: {e}")
@@ -194,10 +203,11 @@ class LyriaClient:
         log_debug(f"Called _reset_async (connected={self.is_connected})")
         if self.session and self.is_connected:
             try:
-                # Clear local buffer so we don't play "old" music
+                # Clear local buffers
                 cleared_count = len(self._playback_buffer)
                 self._playback_buffer.clear()
-                log_debug(f"-> Cleared {cleared_count} buffered chunks")
+                self._all_audio_bytes.clear() # Clear accumulated for the new song
+                log_debug(f"-> Cleared {cleared_count} buffered chunks and all_audio_bytes")
                 
                 log_debug("-> Invoking session.reset_context()...")
                 await self.session.reset_context()
@@ -209,6 +219,32 @@ class LyriaClient:
                 log_debug(f"!! reset_context() FAILED: {e}")
         else:
             log_debug(f"!! reset_context() SKIPPED: connected={self.is_connected}, session={self.session is not None}")
+
+    def get_audio_bytes(self):
+        """Returns all accumulated audio bytes for browser playback."""
+        return bytes(self._all_audio_bytes)
+
+    @staticmethod
+    def create_wav_header(pcm_length, sample_rate=48000, channels=2):
+        """Creates a WAV header for raw PCM data."""
+        import struct
+        bits_per_sample = 16
+        byte_rate = sample_rate * channels * bits_per_sample // 8
+        block_align = channels * bits_per_sample // 8
+        
+        header = b'RIFF'
+        header += struct.pack('<I', 36 + pcm_length)
+        header += b'WAVEfmt '
+        header += struct.pack('<I', 16)
+        header += struct.pack('<H', 1)
+        header += struct.pack('<H', channels)
+        header += struct.pack('<I', sample_rate)
+        header += struct.pack('<I', byte_rate)
+        header += struct.pack('<H', block_align)
+        header += struct.pack('<H', bits_per_sample)
+        header += b'data'
+        header += struct.pack('<I', pcm_length)
+        return header
 
     def test_audio(self, duration=2.0):
         # Already synchronous

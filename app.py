@@ -254,11 +254,24 @@ with col2:
                 reconnect_session()
 
 # --- Audio Playback ---
-if st.session_state.is_running:
-    st.success("Music is playing to your local speakers! 🔊")
+if st.session_state.is_running and st.session_state.client:
+    if st.session_state.client.audio_enabled:
+        st.success("Music is playing to your local speakers! 🔊")
+    else:
+        st.warning("☁️ Cloud Mode: Local speakers unavailable. Use the button below to listen.")
+        
     st.info("Generating music... 🎶")
     
-    # Just show the prompts, no need for choppy rerun logic anymore
+    with st.expander("🌐 Browser Playback (Fallback)", expanded=not st.session_state.client.audio_enabled):
+        st.write("Since you are in the cloud, you can generate a WAV file of the current session.")
+        if st.button("🎵 Generate Browser Audio"):
+            pcm_data = st.session_state.client.get_audio_bytes()
+            if pcm_data:
+                wav_header = LyriaClient.create_wav_header(len(pcm_data))
+                st.audio(wav_header + pcm_data, format="audio/wav")
+            else:
+                st.info("No audio generated yet. Wait a few seconds.")
+
     st.write("Current Prompts:", st.session_state.prompts)
     
     if st.button("Refresh Status"):
