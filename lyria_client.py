@@ -150,7 +150,7 @@ class LyriaClient:
         asyncio.run_coroutine_threadsafe(self._update_config_and_reset_async(config_dict), self._loop)
 
     async def _update_config_and_reset_async(self, config_dict: dict):
-        log_debug("Atomic update started...")
+        log_debug(f"Atomic update started (current rec: {self.recording_duration:.1f}s)")
         await self._set_config_async(config_dict)
         await asyncio.sleep(0.3)
         await self._reset_async()
@@ -160,7 +160,7 @@ class LyriaClient:
             log_debug("Re-sending prompts after reset...")
             await self._set_prompts_async(self._current_prompts)
             
-        log_debug("Atomic update finished.")
+        log_debug(f"Atomic update finished (rec continues: {self.recording_duration:.1f}s)")
 
     async def _set_config_async(self, config_dict: dict):
         if self.session and self.is_connected:
@@ -203,11 +203,11 @@ class LyriaClient:
         log_debug(f"Called _reset_async (connected={self.is_connected})")
         if self.session and self.is_connected:
             try:
-                # Clear local buffers
+                # Clear local playback buffer (immediate transition)
+                # But do NOT clear self._all_audio_bytes so the user can hear the whole session in browser
                 cleared_count = len(self._playback_buffer)
                 self._playback_buffer.clear()
-                self._all_audio_bytes.clear() # Clear accumulated for the new song
-                log_debug(f"-> Cleared {cleared_count} buffered chunks and all_audio_bytes")
+                log_debug(f"-> Flushed {cleared_count} buffered chunks for smooth transition")
                 
                 log_debug("-> Invoking session.reset_context()...")
                 await self.session.reset_context()
@@ -219,6 +219,12 @@ class LyriaClient:
                 log_debug(f"!! reset_context() FAILED: {e}")
         else:
             log_debug(f"!! reset_context() SKIPPED: connected={self.is_connected}, session={self.session is not None}")
+
+    @property
+    def recording_duration(self):
+        """Current length of accumulated audio in seconds."""
+        # 48kHz, 2 channels, 16-bit (2 bytes)
+        return len(self._all_audio_bytes) / (self.sample_rate * self.channels * 2)
 
     def get_audio_bytes(self):
         """Returns all accumulated audio bytes for browser playback."""
